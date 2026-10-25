@@ -1,0 +1,66 @@
+name: Build & Release Janitor
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Strip binary
+        run: strip target/release/janitor
+
+      - name: Create tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist/janitor-${VERSION}
+          install -m 0755 target/release/janitor dist/janitor-${VERSION}/janitor
+          cp README.md LICENSE.md CHANGELOG.md dist/janitor-${VERSION}/ 2>/dev/null || true
+          tar -czf janitor-${VERSION}-aarch64-unknown-linux-gnu.tar.gz -C dist janitor-${VERSION}
+          echo "TARBALL=janitor-${VERSION}-aarch64-unknown-linux-gnu.tar.gz" >> $GITHUB_ENV
+
+      - name: Build RPM
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sudo apt-get update -qq && sudo apt-get install -y -qq rpm
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          cp packaging/janitor.spec ~/rpmbuild/SPECS/
+          tar -czf ~/rpmbuild/SOURCES/janitor-${VERSION}.tar.gz -C . --exclude=target --exclude=.git janitor
+          rpmbuild -ba ~/rpmbuild/SPECS/janitor.spec --define "_version ${VERSION}"
+          cp ~/rpmbuild/RPMS/x86_64/janitor-${VERSION}-1.x86_64.rpm dist/ 2>/dev/null || true
+          ls dist/
+
+      - name: Build DEB
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sudo apt-get install -y -qq dpkg-dev
+          mkdir -p dist/debian/janitor-${VERSION}/DEBIAN
+          mkdir -p dist/debian/janitor-${VERSION}/usr/bin
+          install -m 0755 target/release/janitor dist/debian/janitor-${VERSION}/usr/bin/janitor
+          cp packaging/debian/control dist/debian/janitor-${VERSION}/DEBIAN/control
+          sed -i "s/Version: 0.1.0/Version: ${VERSION}/" dist/debian/janitor-${VERSION}/DEBIAN/control
+          sed -i 's/Architecture: amd64/Architecture: amd64/' dist/debian/janitor-${VERSION}/DEBIAN/control
+          dpkg-deb --build dist/debian/janitor-${VERSION} janitor_${VERSION}_amd64.deb
+          mv janitor_${VERSION}_amd64.deb dist/
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+          generate_release_notes: false
+          fail_on_unmatched_files: false
