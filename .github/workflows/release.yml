@@ -39,7 +39,10 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq rpm
           mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           cp packaging/janitor.spec ~/rpmbuild/SPECS/
-          tar -czf ~/rpmbuild/SOURCES/janitor-${VERSION}.tar.gz -C . --exclude=target --exclude=.git janitor
+          mkdir -p janitor-build/janitor-${VERSION}
+          cp -r Cargo.toml Cargo.lock README.md LICENSE.md CHANGELOG.md packaging src .github scripts RELEASE.md SECURITY.md CONTRIBUTING.md janitor-build/janitor-${VERSION}/ 2>/dev/null || true
+          tar -czf ~/rpmbuild/SOURCES/janitor-${VERSION}.tar.gz -C janitor-build janitor-${VERSION}
+          rm -rf janitor-build
           rpmbuild -ba ~/rpmbuild/SPECS/janitor.spec --define "_version ${VERSION}"
           cp ~/rpmbuild/RPMS/x86_64/janitor-${VERSION}-1.x86_64.rpm dist/ 2>/dev/null || true
           ls dist/
