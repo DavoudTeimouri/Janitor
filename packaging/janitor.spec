@@ -22,5 +22,5 @@ install -m 0755 -D target/release/janitor %{buildroot}%{_bindir}/janitor
 %{_bindir}/janitor
 
 %changelog
-* Tue Jan 01 2025 packager <packager@example.com> - 0.1.0-1
+* Sat Oct 24 2026 DavoudTeimouri <davoudteimouri@users.noreply.github.com> - 0.1.0-1
 - initial package
