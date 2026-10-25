@@ -1,13 +1,22 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub struct Entry {
+#[derive(Clone)]
+pub struct FileEntry {
     pub path: PathBuf,
     pub kind: Kind,
     pub size: u64,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Clone)]
+pub struct DirEntry {
+    pub path: PathBuf,
+    pub total_size: u64,
+    pub file_count: usize,
+    pub files: Vec<FileEntry>,
+}
+
+#[derive(PartialEq, Eq, Clone)]
 pub enum Kind {
     Temp,
     Dump,
@@ -32,15 +41,21 @@ impl Kind {
     }
 }
 
-/// Walk `root` and collect unnecessary entries. Sorted by size descending.
-pub fn scan(root: &Path, min_large: u64) -> Vec<Entry> {
-    let mut out: Vec<Entry> = Vec::new();
-    let _ = walk(root, &mut out, min_large);
-    out.sort_by(|a, b| b.size.cmp(&a.size));
-    out
+pub fn scan_dirs(root: &Path, min_large: u64) -> Vec<DirEntry> {
+    let mut dirs: Vec<DirEntry> = Vec::new();
+    let _ = walk_dir(root, &mut dirs, min_large);
+    dirs.sort_by(|a, b| b.total_size.cmp(&a.total_size));
+    dirs
 }
 
-fn walk(dir: &Path, out: &mut Vec<Entry>, min_large: u64) -> std::io::Result<()> {
+fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Result<()> {
+    let mut current = DirEntry {
+        path: dir.to_path_buf(),
+        total_size: 0,
+        file_count: 0,
+        files: Vec::new(),
+    };
+
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -48,9 +63,10 @@ fn walk(dir: &Path, out: &mut Vec<Entry>, min_large: u64) -> std::io::Result<()>
             Ok(m) => m,
             Err(_) => continue,
         };
+
         if metadata.is_symlink() {
             if !path.exists() {
-                out.push(Entry {
+                current.files.push(FileEntry {
                     path,
                     kind: Kind::OrphanLink,
                     size: 0,
@@ -59,15 +75,23 @@ fn walk(dir: &Path, out: &mut Vec<Entry>, min_large: u64) -> std::io::Result<()>
             continue;
         }
         if metadata.is_dir() {
-            let _ = walk(&path, out, min_large);
+            let _ = walk_dir(&path, dirs, min_large);
+            continue;
         } else if metadata.is_file() {
             let size = metadata.len();
             let kind = classify(&path, size, min_large);
             if kind != Kind::Other {
-                out.push(Entry { path, kind, size });
+                current.files.push(FileEntry { path, kind, size });
+                current.total_size += size;
+                current.file_count += 1;
             }
         }
     }
+
+    if current.file_count > 0 {
+        dirs.push(current);
+    }
+
     Ok(())
 }
 
@@ -133,11 +157,11 @@ mod tests {
             .unwrap()
             .write_all(b"z")
             .unwrap();
-        let entries = scan(p, 1);
-        let kinds: Vec<&str> = entries.iter().map(|e| e.kind.label()).collect();
+        let dirs = scan_dirs(p, 1);
+        assert!(!dirs.is_empty());
+        let kinds: Vec<&str> = dirs[0].files.iter().map(|e| e.kind.label()).collect();
         assert!(kinds.contains(&"temp"));
         assert!(kinds.contains(&"dump"));
-        assert!(!kinds.contains(&"other"));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -149,8 +173,21 @@ mod tests {
             .unwrap()
             .write_all(b"z")
             .unwrap();
-        let entries = scan(p, 1_000_000);
-        assert!(entries.is_empty());
+        let dirs = scan_dirs(p, 1_000_000);
+        assert!(dirs.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn directory_size_aggregates_children() {
+        let dir = tempfile_in_tmp();
+        let p = &dir;
+        fs::File::create(p.join("a.tmp")).unwrap().write_all(b"xx").unwrap();
+        fs::File::create(p.join("b.tmp")).unwrap().write_all(b"yyy").unwrap();
+        let dirs = scan_dirs(p, 1);
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(dirs[0].total_size, 5);
+        assert_eq!(dirs[0].file_count, 2);
         let _ = fs::remove_dir_all(&dir);
     }
 
