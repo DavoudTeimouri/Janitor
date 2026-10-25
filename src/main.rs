@@ -2,17 +2,19 @@ mod clean;
 mod orphan;
 mod report;
 mod scan;
+mod tui;
 
 use std::env;
 use std::path::Path;
 use std::process;
 
-const USAGE: &str = "usage: janitor <scan|clean|orphan|report|drill> [root] [--min-size N] [--yes]\n\
+const USAGE: &str = "usage: janitor <scan|clean|orphan|report|drill|tui> [root] [--min-size N] [--yes]\n\
      scan     - list directories by size under root (default .)\n\
      clean    - delete candidate files (interactive unless --yes)\n\
      orphan   - list broken symlinks under root\n\
      report   - same as scan\n\
-     drill <dir> - show files inside a directory sorted by size";
+     drill <dir> - show files inside a directory sorted by size\n\
+     tui      - interactive directory tree explorer (select to scan/clean)";
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -48,6 +50,9 @@ fn main() {
                 eprintln!("directory not in scan results: {}", target.display());
                 process::exit(1);
             }
+        }
+        "tui" => {
+            let _ = tui::run_tui(Path::new(root));
         }
         _ => {
             eprintln!("{}", USAGE);
