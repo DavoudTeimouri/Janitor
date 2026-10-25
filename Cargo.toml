@@ -1,0 +1,15 @@
+[package]
+name = "janitor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "janitor"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 2
+
+# ponytail: ceiling = subcommand parsing + optional web UI.
+# upgrade path: add clap for CLI; add axum/actix for web behind a feature gate.
+# Keep core dependency-free (stdlib only) for now.
