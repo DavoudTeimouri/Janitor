@@ -7,7 +7,6 @@ use std::process::Command;
 enum TrashBackend {
     TrashPut,
     GioTrash,
-    Rm,
     None,
 }
 
@@ -39,18 +38,6 @@ fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> 
                 Err(io::Error::new(io::ErrorKind::Other, "gio trash failed"))
             }
         }
-        TrashBackend::Rm if yes => {
-            let status = Command::new("rm").arg("-rf").arg(path).status()?;
-            if status.success() {
-                Ok(())
-            } else {
-                Err(io::Error::new(io::ErrorKind::Other, "rm failed"))
-            }
-        }
-        TrashBackend::Rm => Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "permanent delete requires --yes",
-        )),
         TrashBackend::None => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "no trash backend available (install trash-cli or gvfs)",

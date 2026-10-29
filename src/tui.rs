@@ -59,10 +59,6 @@ fn show_cursor() {
     let _ = io::stdout().flush();
 }
 
-fn goto(row: u16, col: u16) {
-    print!("\x1b[{};{}H", row + 1, col + 1);
-}
-
 fn progress_bar(width: usize, done: u64, total: u64) -> String {
     if total == 0 {
         return format!("[{}]", " ".repeat(width));
