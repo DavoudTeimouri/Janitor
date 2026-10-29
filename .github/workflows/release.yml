@@ -42,7 +42,7 @@ jobs:
           cp packaging/janitor.spec ~/rpmbuild/SPECS/
           git archive --format=tar.gz --prefix=janitor-0.1.0/ -o ~/rpmbuild/SOURCES/janitor-0.1.0.tar.gz HEAD
           rpmbuild -ba ~/rpmbuild/SPECS/janitor.spec --define "_version ${VERSION}"
-          cp ~/rpmbuild/RPMS/x86_64/janitor-${VERSION}-1.x86_64.rpm dist/ 2>/dev/null || true
+          find ~/rpmbuild/RPMS/x86_64/ -name 'janitor-*.rpm' -exec cp {} dist/ \;
           ls dist/
 
       - name: Build DEB
