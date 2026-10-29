@@ -4,6 +4,6 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: packager <packager@example.com>
-Description: CCleaner-style Linux cleanup tool
+Description: Linux cleanup tool
  janitor finds and removes temp/dump/cache/log files, oversized files,
  and broken symlinks under a target root. Stdlib-only Rust binary.

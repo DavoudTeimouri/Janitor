@@ -1,7 +1,7 @@
 Name:           janitor
 Version:        0.1.0
 Release:        1%{?dist}
-Summary:        CCleaner-style Linux cleanup tool
+Summary:        Linux cleanup tool
 License:        MIT
 Source0:        %{name}-%{version}.tar.gz
 BuildArch:      x86_64

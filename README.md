@@ -1,6 +1,6 @@
 # Janitor
 
-CCleaner-style Linux cleanup tool written in Rust. Scan directories by size, drill down to large files, and remove candidates safely via Trash — never raw `rm` by default.
+Linux cleanup tool written in Rust. Scan directories by size, drill down to large files, and remove candidates safely via Trash — never raw `rm` by default.
 
 ## Why Janitor
 
@@ -106,7 +106,7 @@ See `.github/release-template.md`.
 
 ## Topics
 
-linux, cleanup, ccleaner, disk-usage, rust, cli, trash, system-administration
+linux, cleanup, disk-usage, rust, cli, trash, system-administration, tui, disk-cleaner
 
 ## License
 

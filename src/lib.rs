@@ -1,4 +1,4 @@
-// janitor — CCleaner-style Linux cleanup tool.
+// janitor — Linux cleanup tool.
 // Core is dependency-free (stdlib only). Packaging templates live in packaging/.
 
 pub mod clean;
