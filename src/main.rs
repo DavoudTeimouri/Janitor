@@ -9,13 +9,16 @@ use std::env;
 use std::path::Path;
 use std::process;
 
-const USAGE: &str = "usage: janitor <scan|clean|orphan|report|drill|tui> [root] [--min-size N] [--yes]\n\
+const USAGE: &str =
+    "usage: janitor <scan|clean|orphan|report|drill|tui> [root] [--min-size N] [--yes]\n\
      scan     - list directories by size under root (default .)\n\
      clean    - delete candidate files (interactive unless --yes)\n\
      orphan   - list broken symlinks under root\n\
      report   - same as scan\n\
      drill <dir> - show files inside a directory sorted by size\n\
-     tui      - interactive directory tree explorer (select to scan/clean)";
+     tui      - interactive directory tree explorer (select to scan/clean)\
+"; // ponytail: hand-rolled arg parsing (stdlib-first, zero deps). Ceiling: ~8 subcommands.
+//   Switch to clap when subcommand count or flag complexity justifies a dependency.
 
 fn main() {
     let args: Vec<String> = env::args().collect();

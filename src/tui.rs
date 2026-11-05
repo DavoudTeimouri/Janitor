@@ -26,7 +26,7 @@ enum ViewMode {
 struct State {
     mode: ViewMode,
     dirs: Vec<DirEntry>,
-    files: Vec<FileEntry>,
+    dir_idx: usize,
     idx: usize,
     root: PathBuf,
     show_progress: bool,
@@ -40,7 +40,7 @@ impl State {
         Self {
             mode: ViewMode::Dirs,
             dirs: Vec::new(),
-            files: Vec::new(),
+            dir_idx: 0,
             idx: 0,
             root: root.to_path_buf(),
             show_progress: true,
@@ -55,8 +55,8 @@ impl State {
         self.dirs = scan_dirs(&self.root, min_size);
         self.scanning = false;
         self.idx = self.idx.min(self.dirs.len().saturating_sub(1));
+        self.dir_idx = self.dir_idx.min(self.dirs.len().saturating_sub(1));
         self.scroll = 0;
-        self.files.clear();
     }
 
     fn selected_dir(&self) -> Option<&DirEntry> {
@@ -64,12 +64,14 @@ impl State {
     }
 
     fn selected_file(&self) -> Option<&FileEntry> {
-        self.files.get(self.idx)
+        self.dirs
+            .get(self.dir_idx)
+            .and_then(|d| d.files.get(self.idx))
     }
 
     fn open_selected_dir(&mut self) {
         if let Some(d) = self.selected_dir() {
-            self.files = d.files.clone();
+            self.dir_idx = self.idx;
             self.idx = 0;
             self.scroll = 0;
             self.mode = ViewMode::Files;
@@ -80,7 +82,7 @@ impl State {
         self.mode = ViewMode::Dirs;
         self.idx = 0;
         self.scroll = 0;
-        self.files.clear();
+        self.dir_idx = 0;
     }
 }
 
@@ -157,7 +159,11 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
                 (Some(Ok(b'[')), Some(Ok(b'B'))) => {
                     let len = match state.mode {
                         ViewMode::Dirs => state.dirs.len(),
-                        ViewMode::Files => state.files.len(),
+                        ViewMode::Files => state
+                            .dirs
+                            .get(state.dir_idx)
+                            .map(|d| d.files.len())
+                            .unwrap_or(0),
                     };
                     if state.idx + 1 < len {
                         state.idx += 1;

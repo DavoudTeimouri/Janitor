@@ -37,22 +37,28 @@ impl Rule {
 }
 
 /// Simple glob match: supports `*` (matches any sequence) and `?` (matches one char).
+/// Depth-capped to prevent stack overflow on pathological patterns.
 fn glob_match(text: &str, pattern: &str) -> bool {
-    glob_match_inner(text.as_bytes(), pattern.as_bytes())
+    glob_match_inner(text.as_bytes(), pattern.as_bytes(), 0)
 }
 
-fn glob_match_inner(text: &[u8], pattern: &[u8]) -> bool {
+const GLOB_MAX_DEPTH: u32 = 64;
+
+fn glob_match_inner(text: &[u8], pattern: &[u8], depth: u32) -> bool {
+    if depth > GLOB_MAX_DEPTH {
+        return false;
+    }
     match (text.first(), pattern.first()) {
         (None, None) => true,
-        (None, Some(b'*')) => glob_match_inner(text, &pattern[1..]),
+        (None, Some(b'*')) => glob_match_inner(text, &pattern[1..], depth + 1),
         (None, Some(_)) => false,
         (Some(_), None) => false,
         (Some(t), Some(p)) => {
             if *p == b'*' {
                 // * matches zero or more chars
-                (0..=text.len()).any(|i| glob_match_inner(&text[i..], &pattern[1..]))
+                (0..=text.len()).any(|i| glob_match_inner(&text[i..], &pattern[1..], depth + 1))
             } else if *p == b'?' || *p == *t {
-                glob_match_inner(&text[1..], &pattern[1..])
+                glob_match_inner(&text[1..], &pattern[1..], depth + 1)
             } else {
                 false
             }
