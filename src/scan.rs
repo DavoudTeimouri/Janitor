@@ -49,6 +49,10 @@ pub fn scan_dirs(root: &Path, min_large: u64) -> Vec<DirEntry> {
 }
 
 fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Result<()> {
+    if is_protected(dir) {
+        return Ok(());
+    }
+
     let mut current = DirEntry {
         path: dir.to_path_buf(),
         total_size: 0,
@@ -65,7 +69,7 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Re
         };
 
         if metadata.is_symlink() {
-            if !path.exists() {
+            if !path.exists() && !is_protected(&path) {
                 current.files.push(FileEntry {
                     path,
                     kind: Kind::OrphanLink,
@@ -75,9 +79,14 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Re
             continue;
         }
         if metadata.is_dir() {
-            let _ = walk_dir(&path, dirs, min_large);
+            if !is_protected(&path) {
+                let _ = walk_dir(&path, dirs, min_large);
+            }
             continue;
         } else if metadata.is_file() {
+            if is_protected(&path) {
+                continue;
+            }
             let size = metadata.len();
             let kind = classify(&path, size, min_large);
             if kind != Kind::Other {

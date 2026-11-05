@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 #[derive(PartialEq, Eq, Clone)]
-enum TrashBackend {
+pub(crate) enum TrashBackend {
     TrashPut,
     GioTrash,
     Rm,
@@ -24,7 +24,7 @@ fn detect_backend(allow_rm: bool) -> TrashBackend {
     TrashBackend::None
 }
 
-fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> {
+fn remove_one(path: &Path, backend: &TrashBackend) -> io::Result<()> {
     match backend {
         TrashBackend::TrashPut => {
             let status = Command::new("trash-put").arg(path).status()?;
@@ -43,12 +43,6 @@ fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> 
             }
         }
         TrashBackend::Rm => {
-            if !yes {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "permanent delete requires --yes",
-                ));
-            }
             if is_protected(path) {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
@@ -69,6 +63,26 @@ fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> 
     }
 }
 
+/// Prompt user (unless --yes), then remove via the configured backend.
+/// Returns Interrupted error if user declined.
+pub(crate) fn clean_one(path: &Path, size: u64, backend: &TrashBackend, yes: bool) -> io::Result<()> {
+    if matches!(backend, TrashBackend::Rm) && is_protected(path) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "protected path — refused to delete",
+        ));
+    }
+    if !yes {
+        print!("delete {} ({})? [y/N] ", path.display(), human_size(size));
+        let _ = io::stdout().flush();
+        let mut line = String::new();
+        if io::stdin().read_line(&mut line).is_err() || !line.trim_start().eq_ignore_ascii_case("y") {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "skipped by user"));
+        }
+    }
+    remove_one(path, backend)
+}
+
 pub fn clean_files(files: &[FileEntry], yes: bool) {
     let backend = detect_backend(yes);
     if files.is_empty() {
@@ -79,28 +93,18 @@ pub fn clean_files(files: &[FileEntry], yes: bool) {
     let mut errors = 0u64;
     let mut skipped_protected = 0u64;
     for e in files {
-        let proceed = if yes {
-            true
-        } else {
-            print!("delete {} ({})? [y/N] ", e.path.display(), human_size(e.size));
-            let _ = io::stdout().flush();
-            let mut line = String::new();
-            io::stdin().read_line(&mut line).is_ok()
-                && line.trim_start().eq_ignore_ascii_case("y")
-        };
-        if !proceed {
-            continue;
-        }
         if matches!(backend, TrashBackend::Rm) && is_protected(&e.path) {
             skipped_protected += 1;
             eprintln!("skip {}: protected path", e.path.display());
             continue;
         }
-        match remove_one(&e.path, &backend, yes) {
+        match clean_one(&e.path, e.size, &backend, yes) {
             Ok(()) => removed += e.size,
             Err(err) => {
-                errors += 1;
-                eprintln!("skip {}: {}", e.path.display(), err);
+                if err.kind() != io::ErrorKind::Interrupted {
+                    errors += 1;
+                    eprintln!("skip {}: {}", e.path.display(), err);
+                }
             }
         }
     }

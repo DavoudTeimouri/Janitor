@@ -1,7 +1,7 @@
 // TUI — pure stdlib, ANSI escape codes + stty raw mode.
 // No external crates. Works on any Linux terminal over SSH.
 
-use crate::clean::clean_files;
+use crate::clean::{clean_files, clean_one, TrashBackend};
 use crate::scan::{DirEntry, FileEntry, human_size, scan_dirs};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -227,15 +227,12 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
                     if let Some(f) = state.selected_file() {
                         show_cursor();
                         clear();
-                        print!("PERMANENTLY delete {}? [y/N] ", f.path.display());
-                        let _ = io::stdout().flush();
-                        let mut line = String::new();
-                        if io::stdin().read_line(&mut line).is_ok()
-                            && line.trim_start().eq_ignore_ascii_case("y")
-                        {
-                            match std::fs::remove_file(&f.path) {
-                                Ok(()) => println!("deleted {}", f.path.display()),
-                                Err(err) => eprintln!("skip {}: {}", f.path.display(), err),
+                        match clean_one(&f.path, f.size, &TrashBackend::Rm, false) {
+                            Ok(()) => println!("deleted {}", f.path.display()),
+                            Err(err) => {
+                                if err.kind() != io::ErrorKind::Interrupted {
+                                    eprintln!("skip {}: {}", f.path.display(), err);
+                                }
                             }
                         }
                         println!("\nPress any key to return...");
