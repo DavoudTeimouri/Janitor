@@ -121,6 +121,65 @@ fn classify(path: &Path, size: u64, min_large: u64) -> Kind {
     Kind::Other
 }
 
+/// Protected path prefixes (from SAFETY.md). Skip these during scan and never delete.
+pub const PROTECTED_PREFIXES: &[&str] = &[
+    "/boot/",
+    "/efi/",
+    "/var/lib/dpkg/",
+    "/var/lib/apt/",
+    "/var/lib/pacman/",
+    "/var/lib/rpm/",
+    "/var/cache/yum/",
+    "/var/cache/dnf/",
+    "/var/lib/flatpak/",
+    "/var/lib/snapd/",
+    "/bin/",
+    "/sbin/",
+    "/usr/bin/",
+    "/usr/sbin/",
+    "/usr/lib/",
+    "/usr/share/",
+    "/lib/",
+    "/lib64/",
+    "/etc/",
+    "/var/lib/docker/",
+    "/var/lib/containers/",
+    "/var/lib/lxc/",
+    "/var/lib/lxd/",
+    "/proc/",
+    "/sys/",
+    "/dev/",
+    "/var/lib/mysql/",
+    "/var/lib/postgresql/",
+    "/var/lib/mongodb/",
+    "/var/mail/",
+    "/var/spool/mail/",
+];
+
+/// Returns true if `path` is under a protected prefix and must not be deleted.
+pub fn is_protected(path: &Path) -> bool {
+    let spill = path.to_string_lossy();
+    // Home-relative protected paths (~/.ssh, ~/.gnupg, etc.)
+    if let Some(home) = std::env::var("HOME").ok() {
+        for p in &[
+            format!("{}/.ssh/", home),
+            format!("{}/.gnupg/", home),
+            format!("{}/.config/systemd/user/", home),
+            format!("{}/.local/share/", home),
+        ] {
+            if spill.starts_with(p.as_str()) {
+                return true;
+            }
+        }
+    }
+    for prefix in PROTECTED_PREFIXES {
+        if spill.starts_with(*prefix) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn human_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;

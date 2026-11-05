@@ -1,0 +1,34 @@
+[Browser Cache]
+paths = ~/.cache/google-chrome, ~/.cache/chromium, ~/.cache/mozilla/firefox
+patterns = *.cache, *.tmp, *.json
+description = Web browser caches (Chrome, Chromium, Firefox)
+
+[APT Cache]
+paths = /var/cache/apt/archives
+patterns = *.deb
+description = Debian/Ubuntu package archive cache — prefer `apt clean`
+
+[DNF Cache]
+paths = /var/cache/dnf
+patterns = *.rpm
+description = Fedora/RHEL package cache — prefer `dnf clean all`
+
+[Pacman Cache]
+paths = /var/cache/pacman/pkg
+patterns = *.pkg.tar.*
+description = Arch Linux package cache — prefer `pacman -Sc`
+
+[System Crash]
+paths = /var/crash
+patterns = *
+description = System crash dumps — safe to remove after review
+
+[Temporary Files]
+paths = /tmp, /var/tmp
+patterns = *.tmp, *.temp
+description = Temporary files in system temp directories
+
+[User Cache]
+paths = ~/.cache
+patterns = *
+description = User application cache — review before bulk deletion

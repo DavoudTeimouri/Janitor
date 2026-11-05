@@ -1,6 +1,7 @@
 mod clean;
 mod orphan;
 mod report;
+mod rules;
 mod scan;
 mod tui;
 

@@ -1,0 +1,9 @@
+[System Crash]
+paths = /var/crash
+patterns = *
+description = System crash dumps — safe to remove after review
+
+[Temporary Files]
+paths = /tmp, /var/tmp
+patterns = *.tmp, *.temp
+description = Temporary files in system temp directories

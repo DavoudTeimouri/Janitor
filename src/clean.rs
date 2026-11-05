@@ -1,4 +1,4 @@
-use crate::scan::{FileEntry, human_size};
+use crate::scan::{FileEntry, human_size, is_protected};
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::Command;
@@ -7,15 +7,19 @@ use std::process::Command;
 enum TrashBackend {
     TrashPut,
     GioTrash,
+    Rm,
     None,
 }
 
-fn detect_backend() -> TrashBackend {
+fn detect_backend(allow_rm: bool) -> TrashBackend {
     if Command::new("trash-put").arg("--version").output().is_ok() {
         return TrashBackend::TrashPut;
     }
     if Command::new("gio").arg("--version").output().is_ok() {
         return TrashBackend::GioTrash;
+    }
+    if allow_rm {
+        return TrashBackend::Rm;
     }
     TrashBackend::None
 }
@@ -38,6 +42,26 @@ fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> 
                 Err(io::Error::new(io::ErrorKind::Other, "gio trash failed"))
             }
         }
+        TrashBackend::Rm => {
+            if !yes {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "permanent delete requires --yes",
+                ));
+            }
+            if is_protected(path) {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "protected path — refused to delete",
+                ));
+            }
+            let status = Command::new("rm").arg("-rf").arg(path).status()?;
+            if status.success() {
+                Ok(())
+            } else {
+                Err(io::Error::new(io::ErrorKind::Other, "rm failed"))
+            }
+        }
         TrashBackend::None => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "no trash backend available (install trash-cli or gvfs)",
@@ -46,13 +70,14 @@ fn remove_one(path: &Path, backend: &TrashBackend, yes: bool) -> io::Result<()> 
 }
 
 pub fn clean_files(files: &[FileEntry], yes: bool) {
-    let backend = detect_backend();
+    let backend = detect_backend(yes);
     if files.is_empty() {
         println!("nothing to clean");
         return;
     }
     let mut removed = 0u64;
     let mut errors = 0u64;
+    let mut skipped_protected = 0u64;
     for e in files {
         let proceed = if yes {
             true
@@ -66,6 +91,11 @@ pub fn clean_files(files: &[FileEntry], yes: bool) {
         if !proceed {
             continue;
         }
+        if matches!(backend, TrashBackend::Rm) && is_protected(&e.path) {
+            skipped_protected += 1;
+            eprintln!("skip {}: protected path", e.path.display());
+            continue;
+        }
         match remove_one(&e.path, &backend, yes) {
             Ok(()) => removed += e.size,
             Err(err) => {
@@ -75,4 +105,7 @@ pub fn clean_files(files: &[FileEntry], yes: bool) {
         }
     }
     println!("removed {} bytes, {} errors", removed, errors);
+    if skipped_protected > 0 {
+        println!("skipped {} protected paths", skipped_protected);
+    }
 }

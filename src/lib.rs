@@ -4,4 +4,5 @@
 pub mod clean;
 pub mod orphan;
 pub mod report;
+pub mod rules;
 pub mod scan;

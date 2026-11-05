@@ -2,45 +2,85 @@
 // No external crates. Works on any Linux terminal over SSH.
 
 use crate::clean::clean_files;
-use crate::scan::{DirEntry, human_size, scan_dirs};
+use crate::scan::{DirEntry, FileEntry, human_size, scan_dirs};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-const HELP: &str =
+const HELP_DIRS: &str =
     "\n\
-  ↑/↓  navigate   →/Enter  drill into directory   c  clean selected   q  quit\n\
-  r    rescan   /  toggle progress bar   ESC  back to parent\n";
+  ↑/↓  navigate   →/Enter  drill into files   c  clean dir's files   q  quit\n\
+  r    rescan   /  toggle progress   ESC  back to parent";
+
+const HELP_FILES: &str =
+    "\n\
+  ↑/↓  navigate   c  clean selected   d  delete selected   g  back to dirs\n\
+  q    quit";
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum ViewMode {
+    Dirs,
+    Files,
+}
 
 struct State {
+    mode: ViewMode,
     dirs: Vec<DirEntry>,
+    files: Vec<FileEntry>,
     idx: usize,
     root: PathBuf,
     show_progress: bool,
     scroll: usize,
     visible: usize,
+    scanning: bool,
 }
 
 impl State {
     fn new(root: &Path) -> Self {
         Self {
+            mode: ViewMode::Dirs,
             dirs: Vec::new(),
+            files: Vec::new(),
             idx: 0,
             root: root.to_path_buf(),
             show_progress: true,
             scroll: 0,
             visible: 20,
+            scanning: false,
         }
     }
 
     fn rescan(&mut self, min_size: u64) {
+        self.scanning = true;
         self.dirs = scan_dirs(&self.root, min_size);
+        self.scanning = false;
         self.idx = self.idx.min(self.dirs.len().saturating_sub(1));
         self.scroll = 0;
+        self.files.clear();
     }
 
-    fn selected(&self) -> Option<&DirEntry> {
+    fn selected_dir(&self) -> Option<&DirEntry> {
         self.dirs.get(self.idx)
+    }
+
+    fn selected_file(&self) -> Option<&FileEntry> {
+        self.files.get(self.idx)
+    }
+
+    fn open_selected_dir(&mut self) {
+        if let Some(d) = self.selected_dir() {
+            self.files = d.files.clone();
+            self.idx = 0;
+            self.scroll = 0;
+            self.mode = ViewMode::Files;
+        }
+    }
+
+    fn back_to_dirs(&mut self) {
+        self.mode = ViewMode::Dirs;
+        self.idx = 0;
+        self.scroll = 0;
+        self.files.clear();
     }
 }
 
@@ -70,9 +110,15 @@ fn progress_bar(width: usize, done: u64, total: u64) -> String {
 
 /// Enter TUI mode. Returns Ok(()) on normal quit.
 pub fn run_tui(root: &Path) -> io::Result<()> {
-    // Save terminal state, switch to raw mode so we read arrow keys byte-by-byte.
     let saved = Command::new("stty").arg("-g").output();
-    let raw_ok = Command::new("stty").arg("raw").arg("-echo").arg("min").arg("1").arg("time").arg("0").status();
+    let raw_ok = Command::new("stty")
+        .arg("raw")
+        .arg("-echo")
+        .arg("min")
+        .arg("1")
+        .arg("time")
+        .arg("0")
+        .status();
     if saved.is_err() || raw_ok.is_err() {
         eprintln!("TUI requires a terminal with stty; falling back to CLI.");
         eprintln!("Use: janitor scan <root> | janitor drill <dir> | janitor clean <root> --yes");
@@ -90,21 +136,17 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
         clear();
         draw(&state)?;
 
-        // Read one key (may be first byte of an escape sequence).
         let first = match bytes.next() {
             Some(Ok(b)) => b,
             _ => break,
         };
 
         if first == 0x1b {
-            // Possible escape sequence: read up to 2 more bytes.
             let second = bytes.next();
             let third = bytes.next();
-            // ESC alone or read error → back to parent.
             let go_back = matches!(second, None | Some(Err(_)));
             match (second, third) {
                 (Some(Ok(b'[')), Some(Ok(b'A'))) => {
-                    // Up
                     if state.idx > 0 {
                         state.idx -= 1;
                         if state.idx < state.scroll {
@@ -113,8 +155,11 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
                     }
                 }
                 (Some(Ok(b'[')), Some(Ok(b'B'))) => {
-                    // Down
-                    if state.idx + 1 < state.dirs.len() {
+                    let len = match state.mode {
+                        ViewMode::Dirs => state.dirs.len(),
+                        ViewMode::Files => state.files.len(),
+                    };
+                    if state.idx + 1 < len {
                         state.idx += 1;
                         if state.idx >= state.scroll + state.visible {
                             state.scroll = state.idx - state.visible + 1;
@@ -122,20 +167,22 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
                     }
                 }
                 (Some(Ok(b'[')), Some(Ok(b'C'))) => {
-                    // Right: drill into selected directory
-                    if let Some(d) = state.selected() {
-                        state.root = d.path.clone();
-                        state.rescan(100_000_000);
+                    if state.mode == ViewMode::Dirs {
+                        state.open_selected_dir();
                     }
                 }
                 _ => {}
             }
             if go_back {
-                if !state.root.pop() {
-                    // already at root, quit
-                    break;
+                match state.mode {
+                    ViewMode::Files => state.back_to_dirs(),
+                    ViewMode::Dirs => {
+                        if !state.root.pop() {
+                            break;
+                        }
+                        state.rescan(100_000_000);
+                    }
                 }
-                state.rescan(100_000_000);
                 continue;
             }
             continue;
@@ -145,39 +192,79 @@ pub fn run_tui(root: &Path) -> io::Result<()> {
             b'q' | b'Q' => break,
             b'r' | b'R' => state.rescan(100_000_000),
             b'\r' | b'\n' => {
-                // Enter: drill into selected directory
-                if let Some(d) = state.selected() {
-                    state.root = d.path.clone();
-                    state.rescan(100_000_000);
+                if state.mode == ViewMode::Dirs {
+                    state.open_selected_dir();
                 }
             }
-            b'c' | b'C' => {
-                // Clean selected directory's files
-                if let Some(d) = state.selected() {
-                    show_cursor();
-                    clear();
-                    clean_files(&d.files, false);
-                    println!("\nPress any key to return...");
-                    let _ = bytes.next();
-                    hide_cursor();
-                    clear();
-                    state.rescan(100_000_000);
+            b'c' | b'C' => match state.mode {
+                ViewMode::Dirs => {
+                    if let Some(d) = state.selected_dir() {
+                        show_cursor();
+                        clear();
+                        clean_files(&d.files, false);
+                        println!("\nPress any key to return...");
+                        let _ = bytes.next();
+                        hide_cursor();
+                        clear();
+                        state.rescan(100_000_000);
+                    }
+                }
+                ViewMode::Files => {
+                    if let Some(f) = state.selected_file() {
+                        show_cursor();
+                        clear();
+                        clean_files(&[f.clone()], false);
+                        println!("\nPress any key to return...");
+                        let _ = bytes.next();
+                        hide_cursor();
+                        clear();
+                        state.rescan(100_000_000);
+                    }
+                }
+            },
+            b'd' | b'D' => {
+                if state.mode == ViewMode::Files {
+                    if let Some(f) = state.selected_file() {
+                        show_cursor();
+                        clear();
+                        print!("PERMANENTLY delete {}? [y/N] ", f.path.display());
+                        let _ = io::stdout().flush();
+                        let mut line = String::new();
+                        if io::stdin().read_line(&mut line).is_ok()
+                            && line.trim_start().eq_ignore_ascii_case("y")
+                        {
+                            match std::fs::remove_file(&f.path) {
+                                Ok(()) => println!("deleted {}", f.path.display()),
+                                Err(err) => eprintln!("skip {}: {}", f.path.display(), err),
+                            }
+                        }
+                        println!("\nPress any key to return...");
+                        let _ = bytes.next();
+                        hide_cursor();
+                        clear();
+                        state.rescan(100_000_000);
+                    }
+                }
+            }
+            b'g' | b'G' => {
+                if state.mode == ViewMode::Files {
+                    state.back_to_dirs();
                 }
             }
             b'/' => state.show_progress = !state.show_progress,
             b'b' | b'B' => {
-                // Back to parent
-                if !state.root.pop() {
-                    break;
+                if state.mode == ViewMode::Dirs {
+                    if !state.root.pop() {
+                        break;
+                    }
+                    state.rescan(100_000_000);
                 }
-                state.rescan(100_000_000);
             }
             _ => {}
         }
     }
 
     show_cursor();
-    // Restore terminal
     if let Ok(out) = saved {
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
         let _ = Command::new("stty").arg(s).status();
@@ -189,7 +276,16 @@ fn draw(state: &State) -> io::Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    let title = format!("Janitor — {}  ({} dirs)", state.root.display(), state.dirs.len());
+    let mode_label = match state.mode {
+        ViewMode::Dirs => "DIRECTORIES",
+        ViewMode::Files => "FILES",
+    };
+    let title = format!(
+        "Janitor — {}  [{}]  ({} dirs)",
+        state.root.display(),
+        mode_label,
+        state.dirs.len()
+    );
     writeln!(out, "\x1b[1m{}\x1b[0m", title)?;
     writeln!(out, "{}", "-".repeat(title.len()))?;
 
@@ -216,8 +312,24 @@ fn draw(state: &State) -> io::Result<()> {
     if state.show_progress {
         writeln!(out, "Scan complete. {}", progress_bar(40, state.dirs.len() as u64, state.dirs.len() as u64))?;
     }
-    writeln!(out, "{}", HELP)?;
-    writeln!(out, "Selected: {}", state.selected().map(|d| d.path.display().to_string()).unwrap_or_else(|| "none".to_string()))?;
+    writeln!(out, "{}", match state.mode {
+        ViewMode::Dirs => HELP_DIRS,
+        ViewMode::Files => HELP_FILES,
+    })?;
+    writeln!(
+        out,
+        "Selected: {}",
+        match state.mode {
+            ViewMode::Dirs => state
+                .selected_dir()
+                .map(|d| d.path.display().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            ViewMode::Files => state
+                .selected_file()
+                .map(|f| f.path.display().to_string())
+                .unwrap_or_else(|| "none".to_string()),
+        }
+    )?;
 
     out.flush()
 }
