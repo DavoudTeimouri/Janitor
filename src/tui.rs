@@ -70,7 +70,7 @@ impl State {
     }
 
     fn open_selected_dir(&mut self) {
-        if let Some(d) = self.selected_dir() {
+        if self.selected_dir().is_some() {
             self.dir_idx = self.idx;
             self.idx = 0;
             self.scroll = 0;

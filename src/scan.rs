@@ -1,3 +1,4 @@
+use crate::rules::{is_rule_protected, load_rules, Rule};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -43,13 +44,14 @@ impl Kind {
 
 pub fn scan_dirs(root: &Path, min_large: u64) -> Vec<DirEntry> {
     let mut dirs: Vec<DirEntry> = Vec::new();
-    let _ = walk_dir(root, &mut dirs, min_large);
+    let rules = load_rules(root);
+    let _ = walk_dir(root, &mut dirs, min_large, &rules);
     dirs.sort_by(|a, b| b.total_size.cmp(&a.total_size));
     dirs
 }
 
-fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Result<()> {
-    if is_protected(dir) {
+fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64, rules: &[Rule]) -> std::io::Result<()> {
+    if is_protected(dir) || is_rule_protected(rules, dir) {
         return Ok(());
     }
 
@@ -69,7 +71,7 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Re
         };
 
         if metadata.is_symlink() {
-            if !path.exists() && !is_protected(&path) {
+            if !path.exists() && !is_protected(&path) && !is_rule_protected(rules, &path) {
                 current.files.push(FileEntry {
                     path,
                     kind: Kind::OrphanLink,
@@ -79,12 +81,12 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64) -> std::io::Re
             continue;
         }
         if metadata.is_dir() {
-            if !is_protected(&path) {
-                let _ = walk_dir(&path, dirs, min_large);
+            if !is_protected(&path) && !is_rule_protected(rules, &path) {
+                let _ = walk_dir(&path, dirs, min_large, rules);
             }
             continue;
         } else if metadata.is_file() {
-            if is_protected(&path) {
+            if is_protected(&path) || is_rule_protected(rules, &path) {
                 continue;
             }
             let size = metadata.len();

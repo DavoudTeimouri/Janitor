@@ -1,7 +1,7 @@
-use crate::scan::{FileEntry, Kind};
+use crate::scan::{FileEntry, Kind, is_protected};
 use std::path::Path;
 
-/// Find broken symlinks under `root`.
+/// Find broken symlinks under `root`. Skips protected paths.
 pub fn find(root: &Path) -> Vec<FileEntry> {
     let mut out: Vec<FileEntry> = Vec::new();
     let _ = walk(root, &mut out);
@@ -10,6 +10,9 @@ pub fn find(root: &Path) -> Vec<FileEntry> {
 }
 
 fn walk(dir: &Path, out: &mut Vec<FileEntry>) -> std::io::Result<()> {
+    if is_protected(dir) {
+        return Ok(());
+    }
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -17,7 +20,7 @@ fn walk(dir: &Path, out: &mut Vec<FileEntry>) -> std::io::Result<()> {
             Ok(m) => m,
             Err(_) => continue,
         };
-        if metadata.is_symlink() && !path.exists() {
+        if metadata.is_symlink() && !path.exists() && !is_protected(&path) {
             out.push(FileEntry {
                 path,
                 kind: Kind::OrphanLink,
@@ -26,7 +29,9 @@ fn walk(dir: &Path, out: &mut Vec<FileEntry>) -> std::io::Result<()> {
             continue;
         }
         if metadata.is_dir() {
-            let _ = walk(&path, out);
+            if !is_protected(&path) {
+                let _ = walk(&path, out);
+            }
         }
     }
     Ok(())
