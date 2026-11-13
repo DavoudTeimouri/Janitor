@@ -35,6 +35,12 @@ fn main() {
     let sub = &args[1];
     let root = args.get(2).map(|s| s.as_str()).unwrap_or(".");
     let yes = args.iter().any(|a| a == "--yes");
+    let format = args
+        .iter()
+        .position(|a| a == "--format")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("text");
     let min_size = args
         .iter()
         .position(|a| a == "--min-size")
@@ -43,19 +49,19 @@ fn main() {
         .unwrap_or(100_000_000);
 
     match sub.as_str() {
-        "scan" => report::print(&scan::scan_dirs(root.as_ref(), min_size)),
-        "report" => report::print(&scan::scan_dirs(root.as_ref(), min_size)),
+        "scan" => report::print(&scan::scan_dirs(root.as_ref(), min_size), &format),
+        "report" => report::print(&scan::scan_dirs(root.as_ref(), min_size), &format),
         "clean" => {
             let dirs = scan::scan_dirs(root.as_ref(), min_size);
             let files: Vec<_> = dirs.iter().flat_map(|d| d.files.iter().cloned()).collect();
             clean::clean_files(&files, yes);
         }
-        "orphan" => report::print_files(&orphan::find(root.as_ref())),
+        "orphan" => report::print_files(&orphan::find(root.as_ref()), &format),
         "drill" => {
             let dirs = scan::scan_dirs(root.as_ref(), min_size);
             let target = Path::new(root);
             if let Some(d) = dirs.iter().find(|d| d.path == target) {
-                report::print_files(&d.files);
+                report::print_files(&d.files, &format);
             } else {
                 eprintln!("directory not in scan results: {}", target.display());
                 process::exit(1);
