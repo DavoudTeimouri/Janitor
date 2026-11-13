@@ -6,6 +6,7 @@ use std::path::Path;
 
 /// A single cleanup rule.
 #[derive(Clone, Debug)]
+#[allow(dead_code)] // name/description available for future reporting; protected is used
 pub struct Rule {
     pub name: String,
     pub paths: Vec<String>,
