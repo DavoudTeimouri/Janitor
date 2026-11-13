@@ -90,7 +90,7 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64, rules: &[Rule]
                 continue;
             }
             let size = metadata.len();
-            let kind = classify(&path, size, min_large);
+            let kind = classify(&path, size, min_large, rules);
             if kind != Kind::Other {
                 current.files.push(FileEntry { path, kind, size });
                 current.total_size += size;
@@ -106,7 +106,11 @@ fn walk_dir(dir: &Path, dirs: &mut Vec<DirEntry>, min_large: u64, rules: &[Rule]
     Ok(())
 }
 
-fn classify(path: &Path, size: u64, min_large: u64) -> Kind {
+fn classify(path: &Path, size: u64, min_large: u64, rules: &[Rule]) -> Kind {
+    // Rules take precedence over extension-based detection.
+    if let Some(kind) = rule_match_kind(rules, path) {
+        return kind;
+    }
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let lower = name.to_lowercase();
     let spill = path.to_string_lossy();
@@ -130,6 +134,25 @@ fn classify(path: &Path, size: u64, min_large: u64) -> Kind {
         return Kind::Large;
     }
     Kind::Other
+}
+
+/// Match a path against rule patterns and return the rule's Kind.
+/// Rule kind strings: "cache" → Cache, "dump"/"crash" → Dump,
+/// "temp"/"tmp" → Temp, "log" → Log. Empty or unknown kind → None.
+fn rule_match_kind(rules: &[Rule], path: &Path) -> Option<Kind> {
+    for rule in rules {
+        if rule.matches(path) {
+            let kind_str = rule.kind.trim().to_lowercase();
+            return match kind_str.as_str() {
+                "cache" => Some(Kind::Cache),
+                "dump" | "crash" => Some(Kind::Dump),
+                "temp" | "tmp" => Some(Kind::Temp),
+                "log" => Some(Kind::Log),
+                _ => None,
+            };
+        }
+    }
+    None
 }
 
 /// Protected path prefixes (from SAFETY.md). Skip these during scan and never delete.

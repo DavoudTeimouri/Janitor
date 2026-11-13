@@ -6,11 +6,12 @@ use std::path::Path;
 
 /// A single cleanup rule.
 #[derive(Clone, Debug)]
-#[allow(dead_code)] // name/description available for future reporting; protected is used
+#[allow(dead_code)] // name/description available for future reporting; kind and protected are used
 pub struct Rule {
     pub name: String,
     pub paths: Vec<String>,
     pub patterns: Vec<String>,
+    pub kind: String,
     pub description: String,
     pub protected: bool,
 }
@@ -93,6 +94,7 @@ fn parse_rule(content: &str) -> Option<Rule> {
     let mut patterns: Vec<String> = Vec::new();
     let mut description = String::new();
     let mut protected = false;
+    let mut kind = String::new();
     let mut in_section = false;
 
     for line in content.lines() {
@@ -122,6 +124,9 @@ fn parse_rule(content: &str) -> Option<Rule> {
                 "protected" => {
                     protected = val.trim().eq_ignore_ascii_case("true");
                 }
+                "kind" => {
+                    kind = val.trim().to_string();
+                }
                 _ => {}
             }
         }
@@ -135,6 +140,7 @@ fn parse_rule(content: &str) -> Option<Rule> {
         name,
         paths,
         patterns,
+        kind,
         description,
         protected,
     })
