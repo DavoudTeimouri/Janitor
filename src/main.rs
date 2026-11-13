@@ -4,14 +4,16 @@ mod orphan;
 mod report;
 mod rules;
 mod scan;
+mod systemd;
 mod tui;
 
 use std::env;
+use std::io::Write;
 use std::path::Path;
 use std::process;
 
 const USAGE: &str =
-    "usage: janitor <scan|clean|orphan|report|drill|tui|docker|podman> [root] [--min-size N] [--yes]\n\
+    "usage: janitor <scan|clean|orphan|report|drill|tui|docker|podman|systemd> [root] [--min-size N] [--yes]\n\
      scan     - list directories by size under root (default .)\n\
      clean    - delete candidate files (interactive unless --yes)\n\
      orphan   - list broken symlinks under root\n\
@@ -19,7 +21,8 @@ const USAGE: &str =
      drill <dir> - show files inside a directory sorted by size\n\
      tui      - interactive directory tree explorer (select to scan/clean)\n\
      docker   - prune Docker system, volumes, and build cache\n\
-     podman   - prune Podman system\
+     podman   - prune Podman system\n\
+     systemd  - detect and remove orphaned systemd units\
 "; // ponytail: hand-rolled arg parsing (stdlib-first, zero deps). Ceiling: ~8 subcommands.
 //   Switch to clap when subcommand count or flag complexity justifies a dependency.
 
@@ -83,6 +86,62 @@ fn main() {
             }
             if let Err(e) = docker::podman_system_prune(yes) {
                 eprintln!("podman system prune: {e}");
+            }
+        }
+        "systemd" => {
+            if !systemd::systemctl_available() {
+                eprintln!("systemctl not found in PATH. Install systemd to use this command.");
+                process::exit(1);
+            }
+            match systemd::find_orphan_units() {
+                Ok(units) => {
+                    if units.is_empty() {
+                        println!("no orphaned systemd units found");
+                    } else {
+                        println!("orphaned systemd units:");
+                        for u in &units {
+                            println!("  {}  ({})  {}", u.name, u.path.display(), u.reason);
+                        }
+                        println!();
+                        if yes {
+                            for u in &units {
+                                if let Err(e) = std::fs::remove_file(&u.path) {
+                                    eprintln!("remove {}: {e}", u.path.display());
+                                } else {
+                                    println!("removed {}", u.path.display());
+                                }
+                            }
+                        } else {
+                            for u in &units {
+                                print!("remove {} ({})? [y/N] ", u.path.display(), u.name);
+                                let _ = std::io::stdout().flush();
+                                let mut line = String::new();
+                                if std::io::stdin().read_line(&mut line).is_ok()
+                                    && line.trim_start().eq_ignore_ascii_case("y")
+                                {
+                                    if let Err(e) = std::fs::remove_file(&u.path) {
+                                        eprintln!("remove {}: {e}", u.path.display());
+                                    } else {
+                                        println!("removed {}", u.path.display());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => eprintln!("systemd scan failed: {e}"),
+            }
+            match systemd::find_failed_units() {
+                Ok(units) => {
+                    if !units.is_empty() {
+                        println!();
+                        println!("failed systemd units:");
+                        for u in &units {
+                            println!("  {u}");
+                        }
+                    }
+                }
+                Err(e) => eprintln!("systemd failed-units scan failed: {e}"),
             }
         }
         _ => {
