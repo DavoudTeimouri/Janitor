@@ -1,4 +1,5 @@
 mod clean;
+mod docker;
 mod orphan;
 mod report;
 mod rules;
@@ -10,13 +11,15 @@ use std::path::Path;
 use std::process;
 
 const USAGE: &str =
-    "usage: janitor <scan|clean|orphan|report|drill|tui> [root] [--min-size N] [--yes]\n\
+    "usage: janitor <scan|clean|orphan|report|drill|tui|docker|podman> [root] [--min-size N] [--yes]\n\
      scan     - list directories by size under root (default .)\n\
      clean    - delete candidate files (interactive unless --yes)\n\
      orphan   - list broken symlinks under root\n\
      report   - same as scan\n\
      drill <dir> - show files inside a directory sorted by size\n\
-     tui      - interactive directory tree explorer (select to scan/clean)\
+     tui      - interactive directory tree explorer (select to scan/clean)\n\
+     docker   - prune Docker system, volumes, and build cache\n\
+     podman   - prune Podman system\
 "; // ponytail: hand-rolled arg parsing (stdlib-first, zero deps). Ceiling: ~8 subcommands.
 //   Switch to clap when subcommand count or flag complexity justifies a dependency.
 
@@ -57,6 +60,30 @@ fn main() {
         }
         "tui" => {
             let _ = tui::run_tui(Path::new(root));
+        }
+        "docker" => {
+            if !docker::command_exists("docker") {
+                eprintln!("docker not found in PATH. Install docker to use this command.");
+                process::exit(1);
+            }
+            if let Err(e) = docker::docker_system_prune(yes) {
+                eprintln!("docker system prune: {e}");
+            }
+            if let Err(e) = docker::docker_volume_prune(yes) {
+                eprintln!("docker volume prune: {e}");
+            }
+            if let Err(e) = docker::docker_builder_prune(yes) {
+                eprintln!("docker builder prune: {e}");
+            }
+        }
+        "podman" => {
+            if !docker::command_exists("podman") {
+                eprintln!("podman not found in PATH. Install podman to use this command.");
+                process::exit(1);
+            }
+            if let Err(e) = docker::podman_system_prune(yes) {
+                eprintln!("podman system prune: {e}");
+            }
         }
         _ => {
             eprintln!("{}", USAGE);
